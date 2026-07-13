@@ -12,22 +12,28 @@ st.set_page_config(page_title="음성 분석기", layout="wide")
 st.title("🎤 Praat 음성 비교 분석기")
 st.caption("Streamlit Cloud 안정 버전")
 
+# ====================== 세션 상태 초기화 ======================
+if "audio_loaded" not in st.session_state:
+    st.session_state.audio_loaded = False
+
 # ====================== 입력 ======================
 st.sidebar.header("음성 입력")
-mode = st.sidebar.radio("입력 방식", ["파일 업로드", "마이크 녹음"], horizontal=True)
+mode = st.sidebar.radio("입력 방식", ["파일 업로드", "마이크 녹음"], horizontal=True, key="mode")
 
 sound = None
 
 if mode == "파일 업로드":
-    uploaded = st.sidebar.file_uploader("WAV 파일", type=["wav"])
+    uploaded = st.sidebar.file_uploader("WAV 파일", type=["wav"], key="uploader")
     if uploaded:
         audio_bytes = uploaded.read()
+        st.session_state.audio_loaded = True
 else:
-    rec = st.sidebar.audio_input("🎤 마이크 녹음")
+    rec = st.sidebar.audio_input("🎤 마이크 녹음", key="recorder")
     if rec:
         audio_bytes = rec.read()
+        st.session_state.audio_loaded = True
 
-if 'audio_bytes' in locals() and audio_bytes:
+if st.session_state.audio_loaded and 'audio_bytes' in locals():
     try:
         with st.spinner("로드 중..."):
             data, sr = sf.read(io.BytesIO(audio_bytes))
@@ -36,6 +42,7 @@ if 'audio_bytes' in locals() and audio_bytes:
         st.success(f"✅ 로드 성공 | 길이: {sound.xmax - sound.xmin:.2f}초")
     except Exception as e:
         st.error(f"로드 실패: {e}")
+        st.session_state.audio_loaded = False
 
 if sound is None:
     st.info("👈 사이드바에서 음성을 입력하세요.")
@@ -45,22 +52,22 @@ if sound is None:
 st.subheader("전체 파형")
 fig = go.Figure(go.Scatter(x=sound.xs(), y=sound.values[0], mode='lines'))
 fig.update_layout(height=300, xaxis_title="시간 (초)")
-st.plotly_chart(fig, use_container_width=True)
+st.plotly_chart(fig, use_container_width=True, key="wave_plot")
 
 # ====================== 구간 선택 ======================
 st.subheader("두 구간 선택")
 c1, c2 = st.columns(2)
 with c1:
     st.write("**구간 1**")
-    start1 = st.number_input("시작 (초)", 0.0, float(sound.xmax), 0.0, 0.1, key="s1")
-    end1 = st.number_input("끝 (초)", start1, float(sound.xmax), min(5.0, sound.xmax), 0.1, key="e1")
+    start1 = st.number_input("시작 (초)", 0.0, float(sound.xmax), 0.0, 0.1, key="start1_fixed")
+    end1 = st.number_input("끝 (초)", start1, float(sound.xmax), min(5.0, sound.xmax), 0.1, key="end1_fixed")
 with c2:
     st.write("**구간 2**")
-    start2 = st.number_input("시작 (초)", 0.0, float(sound.xmax), min(5.0, sound.xmax), 0.1, key="s2")
-    end2 = st.number_input("끝 (초)", start2, float(sound.xmax), min(10.0, sound.xmax), 0.1, key="e2")
+    start2 = st.number_input("시작 (초)", 0.0, float(sound.xmax), min(5.0, sound.xmax), 0.1, key="start2_fixed")
+    end2 = st.number_input("끝 (초)", start2, float(sound.xmax), min(10.0, sound.xmax), 0.1, key="end2_fixed")
 
 # ====================== 분석 ======================
-if st.button("🔍 분석 실행", type="primary", use_container_width=True):
+if st.button("🔍 분석 실행", type="primary", use_container_width=True, key="analyze_btn"):
     try:
         seg1 = sound.extract_part(start1, end1)
         seg2 = sound.extract_part(start2, end2)
@@ -69,7 +76,7 @@ if st.button("🔍 분석 실행", type="primary", use_container_width=True):
         fig2 = make_subplots(rows=2, cols=1, subplot_titles=("구간 1", "구간 2"))
         fig2.add_trace(go.Scatter(x=seg1.xs(), y=seg1.values[0]), row=1, col=1)
         fig2.add_trace(go.Scatter(x=seg2.xs(), y=seg2.values[0]), row=2, col=1)
-        st.plotly_chart(fig2, use_container_width=True)
+        st.plotly_chart(fig2, use_container_width=True, key="compare_plot")
 
         st.subheader("📈 음향 특징 비교")
         def get_features(s):
