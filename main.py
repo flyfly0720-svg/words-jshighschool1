@@ -1,5 +1,6 @@
 import streamlit as st
 import parselmouth
+import soundfile as sf
 import io
 import numpy as np
 import plotly.graph_objects as go
@@ -9,14 +10,13 @@ import pandas as pd
 st.set_page_config(page_title="음성 분석기", layout="wide")
 
 st.title("🎤 Praat 음성 비교 분석기")
-st.caption("Streamlit Cloud 최적화 버전")
+st.caption("Streamlit Cloud 안정 버전")
 
 # ====================== 입력 ======================
 st.sidebar.header("음성 입력")
 mode = st.sidebar.radio("입력 방식", ["파일 업로드", "마이크 녹음"], horizontal=True)
 
 sound = None
-audio_bytes = None
 
 if mode == "파일 업로드":
     uploaded = st.sidebar.file_uploader("WAV 파일", type=["wav"])
@@ -27,11 +27,15 @@ else:
     if rec:
         audio_bytes = rec.read()
 
-if audio_bytes:
+if 'audio_bytes' in locals() and audio_bytes:
     try:
         with st.spinner("로드 중..."):
-            sound = parselmouth.Sound(io.BytesIO(audio_bytes))
-        st.success(f"✅ 성공 | 길이: {sound.xmax - sound.xmin:.2f}초")
+            # soundfile로 bytes 읽기 → numpy array
+            data, sr = sf.read(io.BytesIO(audio_bytes))
+            # parselmouth.Sound 생성
+            sound = parselmouth.Sound(values=data.T if data.ndim > 1 else data.reshape(1, -1), 
+                                     sampling_frequency=sr)
+        st.success(f"✅ 로드 성공 | 길이: {sound.xmax - sound.xmin:.2f}초 | SR: {sr}Hz")
     except Exception as e:
         st.error(f"로드 실패: {e}")
 
@@ -50,12 +54,12 @@ st.subheader("두 구간 선택")
 c1, c2 = st.columns(2)
 with c1:
     st.write("**구간 1**")
-    start1 = st.number_input("시작 (초)", 0.0, float(sound.xmax), 0.0, 0.1, key="start1")
-    end1 = st.number_input("끝 (초)", 0.0, float(sound.xmax), 5.0, 0.1, key="end1")
+    start1 = st.number_input("시작 (초)", 0.0, float(sound.xmax), 0.0, 0.1, key="s1")
+    end1 = st.number_input("끝 (초)", 0.0, float(sound.xmax), 5.0, 0.1, key="e1")
 with c2:
     st.write("**구간 2**")
-    start2 = st.number_input("시작 (초)", 0.0, float(sound.xmax), 5.0, 0.1, key="start2")
-    end2 = st.number_input("끝 (초)", 0.0, float(sound.xmax), 10.0, 0.1, key="end2")
+    start2 = st.number_input("시작 (초)", 0.0, float(sound.xmax), 5.0, 0.1, key="s2")
+    end2 = st.number_input("끝 (초)", 0.0, float(sound.xmax), 10.0, 0.1, key="e2")
 
 if st.button("🔍 분석 실행", type="primary", use_container_width=True):
     try:
@@ -68,8 +72,8 @@ if st.button("🔍 분석 실행", type="primary", use_container_width=True):
         fig2.add_trace(go.Scatter(x=seg2.xs(), y=seg2.values[0]), row=2, col=1)
         st.plotly_chart(fig2, use_container_width=True)
 
-        st.success("분석 완료!")
+        st.success("✅ 분석 완료!")
     except Exception as e:
-        st.error(f"분석 중 오류: {e}")
+        st.error(f"분석 오류: {e}")
 
-st.caption("Powered by Praat (Parselmouth)")
+st.caption("Powered by Praat + soundfile")
