@@ -1,7 +1,5 @@
 streamlit
 praat-parselmouth
-librosa
 numpy
 plotly
 pandas
-scipy
