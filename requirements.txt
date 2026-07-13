@@ -1,6 +1,6 @@
 streamlit
 praat-parselmouth
-soundfile
 numpy
 plotly
 pandas
+soundfile
