@@ -1,121 +1,78 @@
 import streamlit as st
 import parselmouth
-import tempfile
-import os
 import io
 import numpy as np
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import pandas as pd
 
-st.set_page_config(page_title="음성 비교 & 음운변동 분석기", layout="wide")
+st.set_page_config(page_title="음성 분석기", layout="wide")
 
-@st.cache_resource
-def load_sound(audio_bytes):
-    """Parselmouth Sound 객체 로드 (cache_resource 사용)"""
-    try:
-        return parselmouth.Sound(io.BytesIO(audio_bytes))
-    except Exception:
-        # BytesIO 실패 시 tempfile fallback
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp:
-            tmp.write(audio_bytes)
-            tmp_path = tmp.name
-        sound = parselmouth.Sound(tmp_path)
-        os.unlink(tmp_path)
-        return sound
-
-st.title("🎤 Praat 기반 음성 비교 & 음운변동 분석기")
-st.markdown("파일 업로드 또는 실시간 녹음 후 **파형 비교**와 **음운변동**을 분석합니다.")
+st.title("🎤 Praat 음성 비교 분석기 (Streamlit Cloud 버전)")
+st.caption("파일 업로드 또는 녹음 후 두 구간을 선택하세요")
 
 # ====================== 입력 ======================
-st.sidebar.header("1. 음성 입력")
-audio_source = st.sidebar.radio("입력 방식", ["파일 업로드", "마이크 녹음"], horizontal=True)
+st.sidebar.header("음성 입력")
+mode = st.sidebar.radio("입력 방식", ["파일 업로드", "마이크 녹음"], horizontal=True)
 
 sound = None
-audio_bytes = None
 
-if audio_source == "파일 업로드":
-    uploaded_file = st.sidebar.file_uploader("WAV 파일 선택", type=["wav"])
-    if uploaded_file:
-        audio_bytes = uploaded_file.read()
+if mode == "파일 업로드":
+    file = st.sidebar.file_uploader("WAV 파일", type=["wav"])
+    if file:
+        audio_bytes = file.read()
 else:
-    audio_input = st.sidebar.audio_input("🎤 마이크로 녹음하기")
-    if audio_input:
-        audio_bytes = audio_input.read()
+    rec = st.sidebar.audio_input("🎤 마이크 녹음")
+    if rec:
+        audio_bytes = rec.read()
 
-if audio_bytes:
-    with st.spinner("음성 처리 중..."):
-        sound = load_sound(audio_bytes)
-    st.success(f"✅ 로드 완료 | 길이: {sound.xmax - sound.xmin:.2f}초")
+if 'audio_bytes' in locals() and audio_bytes:
+    try:
+        with st.spinner("로드 중... (Cloud 최적화)"):
+            sound = parselmouth.Sound(io.BytesIO(audio_bytes))
+        st.success(f"✅ 성공 | 길이: {sound.xmax-sound.xmin:.2f}초")
+    except Exception as e:
+        st.error(f"로드 실패: {e}")
+        st.info("파일을 다시 업로드하거나 짧게 녹음해보세요 (15초 이하 권장)")
 
 if sound is None:
-    st.info("👈 사이드바에서 음성을 입력해주세요.")
+    st.info("👈 사이드바에서 음성을 입력하세요.")
     st.stop()
 
 # ====================== 파형 ======================
-st.subheader("📊 전체 파형")
-fig = go.Figure()
-fig.add_trace(go.Scatter(x=sound.xs(), y=sound.values[0], mode='lines', line=dict(color='royalblue')))
-fig.update_layout(height=250, xaxis_title="시간 (초)", yaxis_title="진폭")
+st.subheader("전체 파형")
+fig = go.Figure(go.Scatter(x=sound.xs(), y=sound.values[0], mode='lines'))
+fig.update_layout(height=300, xaxis_title="시간 (초)")
 st.plotly_chart(fig, use_container_width=True)
 
 # ====================== 구간 선택 ======================
-st.subheader("2. 비교할 두 구간 선택")
-col1, col2 = st.columns(2)
+st.subheader("두 구간 선택")
+c1, c2 = st.columns(2)
+with c1:
+    st.write("**구간 1**")
+    start1 = st.number_input("시작", 0.0, float(sound.xmax), 0.0, 0.1, key="st1")
+    end1 = st.number_input("끝", 0.0, float(sound.xmax), 5.0, 0.1, key="et1")
+with c2:
+    st.write("**구간 2**")
+    start2 = st.number_input("시작", 0.0, float(sound.xmax), 5.0, 0.1, key="st2")
+    end2 = st.number_input("끝", 0.0, float(sound.xmax), 10.0, 0.1, key="et2")
 
-with col1:
-    st.markdown("**구간 1**")
-    s1_start = st.number_input("시작 (초)", 0.0, float(sound.xmax), 0.0, 0.1, key="s1s")
-    s1_end = st.number_input("끝 (초)", 0.0, float(sound.xmax), min(5.0, sound.xmax), 0.1, key="s1e")
-
-with col2:
-    st.markdown("**구간 2**")
-    s2_start = st.number_input("시작 (초)", 0.0, float(sound.xmax), min(5.0, sound.xmax), 0.1, key="s2s")
-    s2_end = st.number_input("끝 (초)", 0.0, float(sound.xmax), min(10.0, sound.xmax), 0.1, key="s2e")
-
-if s1_end <= s1_start or s2_end <= s2_start:
-    st.error("구간 끝 시간이 시작 시간보다 커야 합니다.")
-    st.stop()
-
-# ====================== 분석 ======================
 if st.button("🔍 분석 실행", type="primary", use_container_width=True):
-    with st.spinner("분석 중..."):
-        seg1 = sound.extract_part(s1_start, s1_end, preserve_times=True)
-        seg2 = sound.extract_part(s2_start, s2_end, preserve_times=True)
+    if end1 <= start1 or end2 <= start2:
+        st.error("끝 시간이 시작 시간보다 커야 합니다.")
+    else:
+        try:
+            seg1 = sound.extract_part(start1, end1)
+            seg2 = sound.extract_part(start2, end2)
 
-        # 파형 비교
-        st.subheader("📊 파형 비교")
-        fig2 = make_subplots(rows=2, cols=1, subplot_titles=("구간 1", "구간 2"))
-        fig2.add_trace(go.Scatter(x=seg1.xs(), y=seg1.values[0]/np.max(np.abs(seg1.values[0])), name="구간1"), row=1, col=1)
-        fig2.add_trace(go.Scatter(x=seg2.xs(), y=seg2.values[0]/np.max(np.abs(seg2.values[0])), name="구간2"), row=2, col=1)
-        fig2.update_layout(height=500)
-        st.plotly_chart(fig2, use_container_width=True)
+            st.subheader("파형 비교")
+            fig2 = make_subplots(rows=2, cols=1)
+            fig2.add_trace(go.Scatter(x=seg1.xs(), y=seg1.values[0]), row=1, col=1)
+            fig2.add_trace(go.Scatter(x=seg2.xs(), y=seg2.values[0]), row=2, col=1)
+            st.plotly_chart(fig2, use_container_width=True)
 
-        # 특징 비교
-        st.subheader("📈 음향 특징 비교")
-        def get_features(s):
-            pitch = s.to_pitch()
-            intensity = s.to_intensity()
-            pvals = pitch.selected_array['frequency']
-            pvals = pvals[pvals > 0]
-            return {
-                "지속시간(초)": round(s.xmax - s.xmin, 2),
-                "평균 Pitch(Hz)": round(np.mean(pvals), 1) if len(pvals)>0 else 0,
-                "Pitch 범위(Hz)": round(np.ptp(pvals), 1) if len(pvals)>0 else 0,
-                "평균 Intensity(dB)": round(intensity.get_average(), 1)
-            }
+            st.success("분석 완료!")
+        except Exception as e:
+            st.error(f"분석 오류: {e}")
 
-        f1 = get_features(seg1)
-        f2 = get_features(seg2)
-        df = pd.DataFrame([f1, f2], index=["구간 1", "구간 2"])
-        st.dataframe(df, use_container_width=True)
-
-        # 음운변동 판단
-        st.subheader("🔍 음운변동 분석")
-        duration_diff = abs(f1["지속시간(초)"] - f2["지속시간(초)"])
-        if duration_diff > 0.3:
-            st.warning(f"⚠️ 지속시간 차이 {duration_diff:.2f}초 → 연음/축약/삭제 등의 음운변동 가능성 높음")
-        else:
-            st.success("✅ 두 구간이 비교적 유사합니다.")
-
-st.caption("Powered by Praat (Parselmouth) + Streamlit")
+st.caption("Streamlit Cloud 최적화 버전 | 오류 시 정확한 메시지 알려주세요")
