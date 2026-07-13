@@ -3,3 +3,4 @@ praat-parselmouth
 numpy
 plotly
 pandas
+soundfile
