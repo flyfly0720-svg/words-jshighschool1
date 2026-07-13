@@ -30,12 +30,10 @@ else:
 if 'audio_bytes' in locals() and audio_bytes:
     try:
         with st.spinner("로드 중..."):
-            # soundfile로 bytes 읽기 → numpy array
             data, sr = sf.read(io.BytesIO(audio_bytes))
-            # parselmouth.Sound 생성
             sound = parselmouth.Sound(values=data.T if data.ndim > 1 else data.reshape(1, -1), 
                                      sampling_frequency=sr)
-        st.success(f"✅ 로드 성공 | 길이: {sound.xmax - sound.xmin:.2f}초 | SR: {sr}Hz")
+        st.success(f"✅ 로드 성공 | 길이: {sound.xmax - sound.xmin:.2f}초")
     except Exception as e:
         st.error(f"로드 실패: {e}")
 
@@ -49,17 +47,21 @@ fig = go.Figure(go.Scatter(x=sound.xs(), y=sound.values[0], mode='lines'))
 fig.update_layout(height=300, xaxis_title="시간 (초)")
 st.plotly_chart(fig, use_container_width=True)
 
-# ====================== 구간 선택 ======================
+# ====================== 구간 선택 (길이 안전하게) ======================
 st.subheader("두 구간 선택")
 c1, c2 = st.columns(2)
+
+duration = sound.xmax - sound.xmin
+
 with c1:
     st.write("**구간 1**")
-    start1 = st.number_input("시작 (초)", 0.0, float(sound.xmax), 0.0, 0.1, key="s1")
-    end1 = st.number_input("끝 (초)", 0.0, float(sound.xmax), 5.0, 0.1, key="e1")
+    start1 = st.number_input("시작 (초)", 0.0, duration, 0.0, 0.1, key="s1")
+    end1 = st.number_input("끝 (초)", start1, duration, min(5.0, duration), 0.1, key="e1")
+
 with c2:
     st.write("**구간 2**")
-    start2 = st.number_input("시작 (초)", 0.0, float(sound.xmax), 5.0, 0.1, key="s2")
-    end2 = st.number_input("끝 (초)", 0.0, float(sound.xmax), 10.0, 0.1, key="e2")
+    start2 = st.number_input("시작 (초)", 0.0, duration, min(5.0, duration), 0.1, key="s2")
+    end2 = st.number_input("끝 (초)", start2, duration, min(10.0, duration), 0.1, key="e2")
 
 if st.button("🔍 분석 실행", type="primary", use_container_width=True):
     try:
@@ -76,4 +78,4 @@ if st.button("🔍 분석 실행", type="primary", use_container_width=True):
     except Exception as e:
         st.error(f"분석 오류: {e}")
 
-st.caption("Powered by Praat + soundfile")
+st.caption("Powered by Praat (Parselmouth)")
